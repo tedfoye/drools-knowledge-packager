@@ -9,7 +9,7 @@
 
 	<groupId>org.fiirs</groupId>
 	<artifactId>drools-knowledge-packager</artifactId>
-	<version>0.0.1</version>
+	<version>0.0.2-SNAPSHOT</version>
 	<packaging>maven-plugin</packaging>
 	<name>Drools Knowledge Packager Maven Plugin</name>
 	<description>This is a Maven plugin that will JBoss Drools 5.2 knowledge files and compile them to a Drools PKG file</description>
