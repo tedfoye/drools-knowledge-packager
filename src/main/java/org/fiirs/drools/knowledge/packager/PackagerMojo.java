@@ -101,6 +101,7 @@ public class PackagerMojo extends AbstractMojo {
 	
 	private List<JarEntry> loadEntries(JarFile jarFile) throws IOException {
 		List<JarEntry> entryList = new ArrayList<JarEntry>();
+		entryList.addAll(loadEntriesByType(jarFile, ".package", null));
 		entryList.addAll(loadEntriesByType(jarFile, ".function", null));
 		entryList.addAll(loadEntriesByType(jarFile, ".model.drl", null));
 		entryList.addAll(loadEntriesByType(jarFile, ".drl", ".model.drl"));
