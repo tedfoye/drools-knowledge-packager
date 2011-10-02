@@ -4,23 +4,23 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.zip.ZipEntry;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugin.logging.Log;
 import org.drools.builder.ResourceType;
 import org.drools.compiler.DroolsError;
 import org.drools.compiler.PackageBuilder;
 import org.drools.compiler.PackageBuilderConfiguration;
 import org.drools.compiler.PackageBuilderErrors;
 import org.drools.core.util.DroolsStreamUtils;
+import org.drools.io.Resource;
 import org.drools.io.ResourceFactory;
 
 /**
@@ -41,30 +41,39 @@ public class PackagerMojo extends AbstractMojo {
 	private File outputDirectory;
 
 	/**
-	 * Location and name of the Drools Knowledge JAR file. This JAR file
-	 * contains Knowledge resources for one Drools Package.
+	 * List of JAR files that contain Drools Knowledge resources. All compiles
+	 * resources from all JARS will be added to one Drools Package.
 	 * 
-	 * @parameter expression="${drools.knowledge-jar}"
+	 * @parameter expression="${drools.knowledge-jars}"
 	 * @required
 	 */
-	private File knowledgeJar;
+	private List<String> knowledgeJars;
 
 	/**
-	 * List of Knowledge resource file names, with extensions, to exclude from
-	 * the Knowledge Package. </br>e.g.
+	 * List of pattern Strings used to match resources in
+	 * <code>knowledgejars</code>. Two wildcards are supported:
+	 * <ul>
+	 * <li>** - will match one or more characters in a path String</li>
+	 * <li>* - will match one or more characters in a file name or file
+	 * extension</li>
+	 * </ul>
+	 * For example:
 	 * 
 	 * <pre>
-	 * {@code
-	 * <exclusions>
-	 *     <exclude>myflow-1.bpmn</exclude>
-	 *     <exclude>myflow-2.bpmn</exclude>
-	 * </exclusions>
-	 * }
+	 *   org/&#42&#42/company/*.drl
 	 * </pre>
 	 * 
-	 * @parameter
+	 * will match
+	 * 
+	 * <pre>
+	 * 	 org/name/company/common.drl
+	 * 	 org/name/company/rules.drl
+	 *   org/name/test/company/moresules.drl
+	 * </pre>
+	 * @parameter expression="${drools.pattern-strings}"
+	 * @required
 	 */
-	private List<String> exclusions;
+	private List<String> patternStrings;
 
 	/**
 	 * The name of the Drools Package.
@@ -116,132 +125,93 @@ public class PackagerMojo extends AbstractMojo {
 		if (!outputDirectory.exists()) {
 			outputDirectory.mkdirs();
 		}
-		if (knowledgeJar.exists()) {
-			try {
-				JarFile jarFile = new JarFile(knowledgeJar.getCanonicalPath());
-				List<JarEntry> entries = loadEntries(jarFile);
-				createDroolsPackage(jarFile, entries);
-			} catch (IOException e) {
-				Log log = getLog();
-				log.error(e.getMessage());
-				throw new MojoExecutionException(e.getMessage());
-			}
 
-			if (hasErrors) {
+		// Build the Knowledge entries
+		KnowledgeEntryBuilder keb = new KnowledgeEntryBuilder();
+		for (String knowledgeJar : knowledgeJars) {
+			keb.addJar(knowledgeJar);
+		}
+		for (String patternString : patternStrings) {
+			keb.addPatternStr(patternString);
+		}
+		KnowledgeEntries ke = null;
+		try {
+			ke = keb.build();
+		} catch (IOException e) {
+			throw new MojoExecutionException(e.toString());
+		}
+
+		// Process KnowledgeEntries
+		if (ke != null) {
+			if (ke.getErrors().size() > 0) {
 				StringBuilder sb = new StringBuilder();
-				for (DroolsError droolsError : packageBuilderErrors.getErrors()) {
-					sb.append(droolsError.getMessage());
-					sb.append("\n");
+				for (String s : ke.getErrors()) {
+					sb.append(s).append("\n");
 				}
 				throw new MojoExecutionException(sb.toString());
 			}
+
+			PackageBuilderConfiguration pbc = createPackageBuilderConfiguration(ke);
+			PackageBuilder pb = createPackageBuilder(ke, pbc);
+			persistPackage(pb);
+		}
+
+		if (hasErrors) {
+			StringBuilder sb = new StringBuilder();
+			for (DroolsError droolsError : packageBuilderErrors.getErrors()) {
+				sb.append(droolsError.getMessage());
+				sb.append("\n");
+			}
+			throw new MojoExecutionException(sb.toString());
 		}
 	}
 
-	private List<JarEntry> loadEntries(JarFile jarFile) throws IOException {
-		List<JarEntry> entryList = new ArrayList<JarEntry>();
-		entryList
-				.addAll(loadEntryByName(jarFile, "drools.packagebuilder.conf"));
-		entryList.addAll(loadEntriesByType(jarFile, ".package", null));
-		entryList.addAll(loadEntriesByType(jarFile, ".function", null));
-		entryList.addAll(loadEntriesByType(jarFile, ".model.drl", null));
-		entryList.addAll(loadEntriesByType(jarFile, ".drl", ".model.drl"));
-		entryList.addAll(loadEntriesByType(jarFile, ".bpmn", null));
-		return entryList;
-	}
-
-	private List<JarEntry> loadEntriesByType(JarFile jarFile, String ext,
-			String excludeExt) {
-		List<JarEntry> entryList = new ArrayList<JarEntry>();
-		Enumeration<JarEntry> entries = jarFile.entries();
-		while (entries.hasMoreElements()) {
-			JarEntry entry = entries.nextElement();
-			String name = entry.getName();
-
-			// Skip .guvnorinfo directories
-			if (name.contains(".guvnorinfo")) {
-				continue;
-			}
-
-			// Skip entries that end with "excludeExt"
-			if (null != excludeExt && name.contains(excludeExt)) {
-				continue;
-			}
-
-			// Skip files in the exclusions list
-			if (exclusions != null) {
-				boolean exclusionFound = false;
-				for (String exclusion : exclusions) {
-					if (name.endsWith(exclusion)) {
-						exclusionFound = true;
-						break;
-					}
-				}
-				if (exclusionFound) {
-					continue;
-				}
-			}
-
-			// Add the Jar Entry to the list
-			if (name.endsWith(ext)) {
-				entryList.add(entry);
-			}
-		}
-		return entryList;
-	}
-
-	private List<JarEntry> loadEntryByName(JarFile jarFile, String name) {
-		List<JarEntry> entryList = new ArrayList<JarEntry>();
-		Enumeration<JarEntry> entries = jarFile.entries();
-		while (entries.hasMoreElements()) {
-			JarEntry entry = entries.nextElement();
-			String entryName = entry.getName();
-
-			if (name != null && name.equalsIgnoreCase(entryName)) {
-				entryList.add(entry);
-				break;
-			}
-		}
-		return entryList;
-	}
-
-	private void createDroolsPackage(JarFile jarFile, List<JarEntry> entries)
-			throws IOException, MojoExecutionException {
-
-		// Get properties from "drools.packagebuilder.conf"
-		PackageBuilderConfiguration pbc = createPackageBuilderConfiguration(
-				jarFile, entries);
-
-		configureClassDump(pbc);
-
-		// Create the package builder
-		PackageBuilder pbuilder = new PackageBuilder(pbc);
-		pbuilder.getPackageBuilderConfiguration().setDefaultPackageName(
+	private PackageBuilder createPackageBuilder(KnowledgeEntries ke,
+			PackageBuilderConfiguration pbc) throws MojoExecutionException {
+		PackageBuilder pb = new PackageBuilder(pbc);
+		pb.getPackageBuilderConfiguration().setDefaultPackageName(
 				droolsPackageName);
 
-		// Add all entries to pbuilder, skip drools.packagebuilder.conf
-		for (JarEntry entry : entries) {
-			if (entry.getName().equalsIgnoreCase("drools.packagebuilder.conf")) {
-				continue;
-			}
-			ResourceType resourceType = ResourceType.DRL;
-			if (entry.getName().endsWith(".bpmn")) {
-				resourceType = ResourceType.BPMN2;
-			}
-			String s = readEntryAsString(jarFile, entry);
-			pbuilder.addKnowledgeResource(
-					ResourceFactory.newByteArrayResource(s.getBytes()),
-					resourceType, null);
-		}
+		// Add all entries to the Package Builder, skip
+		// drools.packagebuilder.conf
+		try {
+			for (Entry<String, List<String>> mapEntry : ke.getEntries()
+					.entrySet()) {
+				JarFile jarFile = new JarFile(mapEntry.getKey());
 
+				for (String name : mapEntry.getValue()) {
+					if (name.endsWith("drool.packagebuilder.conf")) {
+						continue;
+					}
+					ResourceType resourceType = ResourceType.DRL;
+					if (name.endsWith(".bpmn")) {
+						resourceType = ResourceType.BPMN2;
+					}
+					JarEntry jarEntry = jarFile.getJarEntry(name);
+					String knowledge = readEntryAsString(jarFile, jarEntry);
+
+					Resource res = ResourceFactory
+							.newByteArrayResource(knowledge.getBytes());
+					pb.addKnowledgeResource(res, resourceType, null);
+				}
+				jarFile.close();
+			}
+		} catch (IOException e) {
+			throw new MojoExecutionException(e.getMessage());
+		}
+		return pb;
+	}
+
+	private void persistPackage(PackageBuilder pb)
+			throws MojoExecutionException {
 		// Get the package and check for errors
-		org.drools.rule.Package pkg = pbuilder.getPackage();
-		hasErrors = pbuilder.hasErrors();
+		org.drools.rule.Package pkg = pb.getPackage();
+		hasErrors = pb.hasErrors();
 		if (hasErrors) {
-			packageBuilderErrors = pbuilder.getErrors();
+			packageBuilderErrors = pb.getErrors();
 		}
 
-		// Create the PKG file only if there are no errors
+		// Persist the package file only if there are no errors
 		if (!hasErrors) {
 			File file = new File(droolsPackageFilePath);
 			file.mkdirs();
@@ -255,10 +225,16 @@ public class PackagerMojo extends AbstractMojo {
 			try {
 				fos = new FileOutputStream(file);
 				DroolsStreamUtils.streamOut(fos, pkg);
+			} catch (IOException e) {
+				throw new MojoExecutionException(e.getMessage());
 			} finally {
 				if (fos != null) {
-					fos.flush();
-					fos.close();
+					try {
+						fos.flush();
+						fos.close();
+					} catch (IOException e) {
+						throw new MojoExecutionException(e.getMessage());
+					}
 				}
 			}
 
@@ -267,35 +243,54 @@ public class PackagerMojo extends AbstractMojo {
 
 	// Get properties from "drools.packagebuilder.conf"
 	private PackageBuilderConfiguration createPackageBuilderConfiguration(
-			JarFile jarFile, List<JarEntry> entries) throws IOException {
+			KnowledgeEntries kEntries) throws MojoExecutionException {
 		PackageBuilderConfiguration pbc = new PackageBuilderConfiguration();
-		for (JarEntry confEntry : entries) {
-			if (confEntry.getName().equalsIgnoreCase(
-					"drools.packagebuilder.conf")) {
-				Properties props = new Properties();
-				InputStream is = jarFile.getInputStream(confEntry);
-				props.load(is);
-				for (Map.Entry<Object, Object> propEntry : props.entrySet()) {
-					String key = (String) propEntry.getKey();
-					String value = (String) propEntry.getValue();
-					pbc.setProperty(key, value);
+
+		String pbcJarName = null;
+		String pbcFileName = null;
+		for (Entry<String, List<String>> mapEntry : kEntries.getEntries()
+				.entrySet()) {
+			for (String s : mapEntry.getValue()) {
+				if (s.endsWith("drool.packagebuilder.conf")) {
+					pbcJarName = mapEntry.getKey();
+					pbcFileName = s;
+					break;
 				}
+			}
+			if (null != pbcJarName && null != pbcFileName) {
 				break;
 			}
 		}
+
+		try {
+			if (null != pbcJarName && null != pbcFileName) {
+				JarFile jarFile = new JarFile(pbcJarName);
+				ZipEntry ze = jarFile.getEntry(pbcFileName);
+				if (ze != null) {
+					InputStream is = jarFile.getInputStream(ze);
+					Properties props = new Properties();
+					props.load(is);
+					for (Map.Entry<Object, Object> propEntry : props.entrySet()) {
+						String key = (String) propEntry.getKey();
+						String value = (String) propEntry.getValue();
+						pbc.setProperty(key, value);
+					}
+				}
+			}
+		} catch (IOException e) {
+			throw new MojoExecutionException(e.getMessage());
+		}
+		configureClassDump(pbc);
 		return pbc;
 	}
 
 	// Dump the generated code?
-	private void configureClassDump(PackageBuilderConfiguration pbc) throws MojoExecutionException {
+	private void configureClassDump(PackageBuilderConfiguration pbc) {
 		if (droolsClassDump && null != droolsClassDumpDir
 				&& droolsClassDumpDir.length() > 0) {
 			File file = new File(droolsClassDumpDir);
-			if(file.mkdirs()) {
-				pbc.setProperty("drools.dump.dir", droolsClassDumpDir);
-			} else {
-				throw new MojoExecutionException("Could not create directory " + droolsClassDumpDir);
-			}
+			file.mkdirs();
+			pbc.setProperty("drools.dump.dir", droolsClassDumpDir);
 		}
 	}
 

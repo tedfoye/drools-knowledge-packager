@@ -2,12 +2,7 @@ package org.fiirs.drools.knowledge.packager;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class KnowledgeEntryBuilder {
 	public static String WILD_CARD_PATTERN = "(\\*\\*)|(\\*)";
@@ -38,7 +33,7 @@ public class KnowledgeEntryBuilder {
 		return patternStrings;
 	}
 
-	public KnowledgeEntries build() {
+	public KnowledgeEntries build() throws IOException {
 		return new KnowledgeEntries(this);
 	}	
 }
