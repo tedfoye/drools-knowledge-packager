@@ -12,7 +12,7 @@
 	<version>0.0.4-SNAPSHOT</version>
 	<packaging>maven-plugin</packaging>
 	<name>Drools Knowledge Packager Maven Plugin</name>
-	<description>This is a Maven plugin that will JBoss Drools 5.2 knowledge files and compile them to a Drools PKG file</description>
+	<description>This is a Maven plugin that will read JBoss Drools knowledge files from multiple JAR files and compile them to a Drools PKG file</description>
 	<url>http://fiirs.org</url>
 
 	<licenses>
