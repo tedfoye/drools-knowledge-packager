@@ -199,7 +199,7 @@ public class PackagerMojo extends AbstractMojo {
 					if (name.endsWith("drools.packagebuilder.conf")) {
 						continue;
 					}
-					getLog().info("    processing " + name);
+					getLog().info("    Processing: " + name);
 					
 					ResourceType resourceType = ResourceType.DRL;
 					if (name.endsWith(".bpmn")) {
@@ -212,6 +212,7 @@ public class PackagerMojo extends AbstractMojo {
 							.newByteArrayResource(knowledge.getBytes());
 					pb.addKnowledgeResource(res, resourceType, null);
 				}
+				getLog().info("");
 				jarFile.close();
 			}
 		} catch (IOException e) {
