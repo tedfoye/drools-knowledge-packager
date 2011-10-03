@@ -270,6 +270,8 @@ public class PackagerMojo extends AbstractMojo {
 				JarFile jarFile = new JarFile(pbcJarName);
 				ZipEntry ze = jarFile.getEntry(pbcFileName);
 				if (ze != null) {
+					getLog().info("Processing " + pbcFileName);
+					getLog().info("  in JAR file " + pbcJarName);					
 					InputStream is = jarFile.getInputStream(ze);
 					Properties props = new Properties();
 					props.load(is);
