@@ -178,11 +178,14 @@ public class PackagerMojo extends AbstractMojo {
 			for (Entry<String, List<String>> mapEntry : ke.getEntries()
 					.entrySet()) {
 				JarFile jarFile = new JarFile(mapEntry.getKey());
-
+				getLog().info("JAR file: " + mapEntry.getKey());
+				
 				for (String name : mapEntry.getValue()) {
-					if (name.endsWith("drool.packagebuilder.conf")) {
+					if (name.endsWith("drools.packagebuilder.conf")) {
 						continue;
 					}
+					getLog().info("    processing " + name);
+					
 					ResourceType resourceType = ResourceType.DRL;
 					if (name.endsWith(".bpmn")) {
 						resourceType = ResourceType.BPMN2;
@@ -251,7 +254,7 @@ public class PackagerMojo extends AbstractMojo {
 		for (Entry<String, List<String>> mapEntry : kEntries.getEntries()
 				.entrySet()) {
 			for (String s : mapEntry.getValue()) {
-				if (s.endsWith("drool.packagebuilder.conf")) {
+				if (s.endsWith("drools.packagebuilder.conf")) {
 					pbcJarName = mapEntry.getKey();
 					pbcFileName = s;
 					break;
