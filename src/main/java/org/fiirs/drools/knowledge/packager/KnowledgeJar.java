@@ -15,28 +15,34 @@
  */
 package org.fiirs.drools.knowledge.packager;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class KnowledgeEntryBuilder {
-	public static String WILD_CARD_PATTERN = "(\\*\\*)|(\\*)";
-	private List<KnowledgeJar> knowledgeJars;
+public class KnowledgeJar {
+    private String knowledgeJarName;
+	private List<String> patternStrings;
 	
-	public KnowledgeEntryBuilder() {
-		knowledgeJars = new ArrayList<KnowledgeJar>();
+	public KnowledgeJar() {
+		patternStrings = new ArrayList<String>();
 	}
 	
-	public KnowledgeEntryBuilder addKJars(List<KnowledgeJar> knowledgeJars) {
-		this.knowledgeJars = knowledgeJars;
-		return this;
+	public String getKnowledgeJarName() {
+		return knowledgeJarName;
 	}
 	
-	public List<KnowledgeJar> getKJars() {
-		return knowledgeJars;
+	public void setKnowledgeJarName(String knowledgeJarName) {
+		this.knowledgeJarName = knowledgeJarName;
 	}
 	
-	public KnowledgeEntries build() throws IOException {
-		return new KnowledgeEntries(this);
-	}	
+	public List<String> getPatternStrings() {
+		return patternStrings;
+	}
+	
+	public void setPatternStrings(List<String> patternStrings) {
+		this.patternStrings = patternStrings;
+	}
+	
+	public void setPatternString(String patternString) {
+		patternStrings.add(patternString);
+	}
 }

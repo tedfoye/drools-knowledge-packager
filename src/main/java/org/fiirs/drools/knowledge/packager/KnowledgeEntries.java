@@ -18,38 +18,38 @@ package org.fiirs.drools.knowledge.packager;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class KnowledgeEntries {
-	private Map<String, List<String>> entries;
+	private List<KnowledgeJar> knowledgeJars;
 	private List<String> errors;
 
 	public KnowledgeEntries(KnowledgeEntryBuilder builder) throws IOException {
-		entries = new HashMap<String, List<String>>();
+		knowledgeJars = new ArrayList<KnowledgeJar>();
 		errors = new ArrayList<String>();
 		buildEntries(builder);
 	}
 
-	public Map<String, List<String>> getEntries() {
-		return entries;
+	public List<KnowledgeJar> getKnowledgeJars() {
+		return knowledgeJars;
 	}
-
+	
 	public List<String> getErrors() {
 		return errors;
 	}
 
 	private void buildEntries(KnowledgeEntryBuilder builder) throws IOException {
-		for (String s : builder.getJarFiles()) {
+		for (KnowledgeJar kJar : builder.getKJars()) {
 			JarFile jarFile = null;
 			try {
-				jarFile = new JarFile(s);
-				scanJarFile(builder, jarFile);
+				jarFile = new JarFile(kJar.getKnowledgeJarName());
+				scanJarFile(jarFile, kJar.getPatternStrings());
 			} finally {
 				if (jarFile != null) {
 					jarFile.close();
@@ -58,27 +58,28 @@ public class KnowledgeEntries {
 		}
 	}
 
-	private void scanJarFile(KnowledgeEntryBuilder builder, JarFile jarFile) {
-		Enumeration<JarEntry> jarFileEntries = jarFile.entries();
-		while (jarFileEntries.hasMoreElements()) {
-			JarEntry jarEntry = jarFileEntries.nextElement();
-			for (String patternString : builder.getPatternStrings()) {
-				if (Pattern.matches(convertToRegEx(patternString),
-						jarEntry.getName())) {
-					addEntry(jarFile.getName(), jarEntry.getName());
+	private void scanJarFile(JarFile jarFile, List<String> patternStrings) {
+		Set<String> alreadyProcessed = new HashSet<String>();
+		
+		List<String> jarEntries = new ArrayList<String>();
+		for(String patternString : patternStrings) {
+			Enumeration<JarEntry> jarFileEntries = jarFile.entries();
+			while (jarFileEntries.hasMoreElements()) {
+				JarEntry jarEntry = jarFileEntries.nextElement();
+				if (Pattern.matches(convertToRegEx(patternString), jarEntry.getName())) {
+					if(!alreadyProcessed.contains(jarEntry.getName())) {
+						jarEntries.add(jarEntry.getName());
+						alreadyProcessed.add(jarEntry.getName());
+					}
 				}
 			}
-
 		}
-	}
-
-	private void addEntry(String jarName, String entryName) {
-		List<String> entryList = entries.get(jarName);
-		if (null == entryList) {
-			entryList = new ArrayList<String>();
-			entries.put(jarName, entryList);
+		if(jarEntries.size() > 0) {
+			KnowledgeJar kJar = new KnowledgeJar();
+			kJar.setKnowledgeJarName(jarFile.getName());
+			kJar.setPatternStrings(jarEntries);
+			knowledgeJars.add(kJar);
 		}
-		entryList.add(entryName);
 	}
 
 	private String convertToRegEx(String s) {

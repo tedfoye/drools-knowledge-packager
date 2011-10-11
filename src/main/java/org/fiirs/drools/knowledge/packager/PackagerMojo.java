@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -56,16 +55,24 @@ public class PackagerMojo extends AbstractMojo {
 	private File outputDirectory;
 
 	/**
-	 * List of JAR files that contain Drools Knowledge resources. All compiles
-	 * resources from all JARS will be added to one Drools Package.
-	 * 
-	 * @parameter expression="${drools.knowledge-jars}"
-	 * @required
-	 */
-	private List<String> knowledgeJars;
-
-	/**
-	 * List of pattern Strings used to match resources in
+	 * <p>
+	 * List of Knowledge resource sets.  Each set contains a Knowledge JAR and
+	 * a list of pattern strings. Here is an example, which is added to a {@code
+	 * <configuration>} tag.
+	 * </p>
+	 * <pre>
+	 * {@code
+	 *  <knowledgeJars>
+	 *      <knowledgeJar>
+	 *          <knowledgeJarName>the jar name</knowledgeJarName>
+	 *          <patternString>pattern 1</patternString>
+	 *          <patternString>pattern 2</patternString>
+	 *      </knowledgeJar>
+	 *  <knowledgeJars>
+	 * }
+	 * </pre>
+	 * <p>
+	 * Pattern Strings are used to match resources in
 	 * <code>knowledgejars</code>. Two wildcards are supported:
 	 * <ul>
 	 * <li>** - will match one or more characters in a path String</li>
@@ -74,21 +81,21 @@ public class PackagerMojo extends AbstractMojo {
 	 * </ul>
 	 * For example:
 	 * 
-	 * <pre>
-	 *   org/&#42&#42/company/*.drl
-	 * </pre>
-	 * 
+	 * <ul>
+	 *     <li>org/&#42&#42/company/*.drl</li>
+	 * </ul>
 	 * will match
 	 * 
-	 * <pre>
-	 * 	 org/name/company/common.drl
-	 * 	 org/name/company/rules.drl
-	 *   org/name/test/company/moresules.drl
-	 * </pre>
-	 * @parameter expression="${drools.pattern-strings}"
+	 * <ul>
+	 * 	 <li>org/name/company/common.drl</li>
+	 * 	 <li>org/name/company/rules.drl</li>
+	 *   <li>org/name/test/company/moresules.drl</li>
+	 * </ul>
+	 * </p>
+	 * @parameter expression="${drools.knowlege-jars}"
 	 * @required
 	 */
-	private List<String> patternStrings;
+	private List<KnowledgeJar> knowledgeJars;
 
 	/**
 	 * The name of the Drools Package.
@@ -143,12 +150,7 @@ public class PackagerMojo extends AbstractMojo {
 
 		// Build the Knowledge entries
 		KnowledgeEntryBuilder keb = new KnowledgeEntryBuilder();
-		for (String knowledgeJar : knowledgeJars) {
-			keb.addJar(knowledgeJar);
-		}
-		for (String patternString : patternStrings) {
-			keb.addPatternStr(patternString);
-		}
+		keb.addKJars(knowledgeJars);
 		KnowledgeEntries ke = null;
 		try {
 			ke = keb.build();
@@ -184,28 +186,25 @@ public class PackagerMojo extends AbstractMojo {
 	private PackageBuilder createPackageBuilder(KnowledgeEntries ke,
 			PackageBuilderConfiguration pbc) throws MojoExecutionException {
 		PackageBuilder pb = new PackageBuilder(pbc);
-		pb.getPackageBuilderConfiguration().setDefaultPackageName(
-				droolsPackageName);
+		pb.getPackageBuilderConfiguration().setDefaultPackageName(droolsPackageName);
 
 		// Add all entries to the Package Builder, skip
 		// drools.packagebuilder.conf
 		try {
-			for (Entry<String, List<String>> mapEntry : ke.getEntries()
-					.entrySet()) {
-				JarFile jarFile = new JarFile(mapEntry.getKey());
-				getLog().info("JAR file: " + mapEntry.getKey());
+			for(KnowledgeJar kJar : ke.getKnowledgeJars()) {
+				JarFile jarFile = new JarFile(kJar.getKnowledgeJarName());
+				getLog().info("JAR file: " + kJar.getKnowledgeJarName());
 				
-				for (String name : mapEntry.getValue()) {
-					if (name.endsWith("drools.packagebuilder.conf")) {
+				for(String s : kJar.getPatternStrings()) {
+					if (s.endsWith("drools.packagebuilder.conf")) {
 						continue;
 					}
-					getLog().info("    Processing: " + name);
-					
+					getLog().info("    Processing: " + s);
 					ResourceType resourceType = ResourceType.DRL;
-					if (name.endsWith(".bpmn")) {
+					if (s.endsWith(".bpmn")) {
 						resourceType = ResourceType.BPMN2;
 					}
-					JarEntry jarEntry = jarFile.getJarEntry(name);
+					JarEntry jarEntry = jarFile.getJarEntry(s);
 					String knowledge = readEntryAsString(jarFile, jarEntry);
 
 					Resource res = ResourceFactory
@@ -214,7 +213,7 @@ public class PackagerMojo extends AbstractMojo {
 				}
 				getLog().info("");
 				jarFile.close();
-			}
+			}			
 		} catch (IOException e) {
 			throw new MojoExecutionException(e.getMessage());
 		}
@@ -262,17 +261,16 @@ public class PackagerMojo extends AbstractMojo {
 
 	// Get properties from "drools.packagebuilder.conf"
 	private PackageBuilderConfiguration createPackageBuilderConfiguration(
-			KnowledgeEntries kEntries) throws MojoExecutionException {
+			KnowledgeEntries ke) throws MojoExecutionException {
 		PackageBuilderConfiguration pbc = new PackageBuilderConfiguration();
 
 		String pbcJarName = null;
 		String pbcFileName = null;
-		for (Entry<String, List<String>> mapEntry : kEntries.getEntries()
-				.entrySet()) {
-			for (String s : mapEntry.getValue()) {
-				if (s.endsWith("drools.packagebuilder.conf")) {
-					pbcJarName = mapEntry.getKey();
-					pbcFileName = s;
+		for(KnowledgeJar kJar : ke.getKnowledgeJars()) {
+			for(String patternString : kJar.getPatternStrings()) {
+				if (patternString.endsWith("drools.packagebuilder.conf")) {
+					pbcJarName = kJar.getKnowledgeJarName();
+					pbcFileName = patternString;
 					break;
 				}
 			}
